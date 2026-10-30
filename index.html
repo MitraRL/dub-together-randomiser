@@ -1,0 +1,2414 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DUB TOGETHER // Режиссёрский пульт</title>
+  <!-- MQTT-клиент для синхронизации между разными ПК через интернет -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      --bg-main: #0b0d14;
+      --bg-card: rgba(20, 24, 38, 0.88);
+      --bg-card-hover: rgba(28, 34, 54, 0.94);
+      --border-glass: rgba(255, 255, 255, 0.12);
+      --accent-cyan: #00f2fe;
+      --accent-purple: #9d4edd;
+      --accent-pink: #ff2a85;
+      --accent-gold: #ffbe0b;
+      --accent-green: #00f5d4;
+      --text-main: #f8f9fa;
+      --text-muted: #94a3b8;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --shadow-glow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 15% 15%, #1a1f35 0%, #0b0d14 70%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 20px;
+      transition: background 0.3s ease;
+    }
+
+    body.obs-transparent {
+      background: transparent !important;
+    }
+
+    .app-container {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ЭКРАН РЕГИСТРАЦИИ СТРИМЕРА */
+    .registration-overlay {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 30%, #1a1f35 0%, #0b0d14 85%);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .registration-overlay.active {
+      display: flex;
+    }
+
+    .reg-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      border-radius: 20px;
+      padding: 28px 26px;
+      max-width: 440px;
+      width: 100%;
+      box-shadow: var(--shadow-glow), 0 0 30px rgba(0, 242, 254, 0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      text-align: center;
+    }
+
+    .reg-icon {
+      font-size: 42px;
+      filter: drop-shadow(0 0 10px rgba(0, 242, 254, 0.5));
+    }
+
+    .reg-title {
+      font-size: 22px;
+      font-weight: 900;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, #ffffff, var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .reg-sub {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .reg-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }
+
+    .reg-input-group label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent-cyan);
+    }
+
+    .reg-input {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      color: #ffffff;
+      font-size: 17px;
+      font-weight: 800;
+      padding: 13px 16px;
+      width: 100%;
+      outline: none;
+      text-align: center;
+      transition: 0.2s;
+    }
+
+    .reg-input:focus {
+      border-color: var(--accent-cyan);
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.2);
+    }
+
+    .reg-switch-director {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: underline;
+      margin-top: 4px;
+    }
+
+    .reg-switch-director:hover {
+      color: #ffffff;
+    }
+
+    /* ПАНЕЛЬ ССЫЛКИ И СИНХРОНИЗАЦИИ */
+    .invite-bar {
+      background: rgba(0, 242, 254, 0.07);
+      border: 1px solid rgba(0, 242, 254, 0.28);
+      border-radius: var(--radius-lg);
+      padding: 11px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .invite-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .sync-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      display: inline-block;
+      box-shadow: 0 0 8px var(--accent-gold);
+    }
+
+    .sync-dot.online {
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+    }
+
+    .room-code-input {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border-glass);
+      color: var(--accent-cyan);
+      font-weight: 800;
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 8px;
+      width: 125px;
+      text-align: center;
+      outline: none;
+      text-transform: uppercase;
+    }
+
+    /* ЛИЧНАЯ ПЛАШКА СТРИМЕРА */
+    .streamer-personal-banner {
+      display: none;
+      background: linear-gradient(90deg, rgba(0, 242, 254, 0.14), rgba(157, 78, 221, 0.16));
+      border: 1px solid var(--accent-cyan);
+      border-radius: var(--radius-lg);
+      padding: 13px 20px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .streamer-personal-info {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .streamer-tag-you {
+      background: var(--accent-cyan);
+      color: #0b0d14;
+      font-size: 12px;
+      font-weight: 900;
+      padding: 4px 10px;
+      border-radius: 8px;
+      text-transform: uppercase;
+    }
+
+    /* ШАПКА */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 14px 20px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .clapper-icon {
+      font-size: 28px;
+      filter: drop-shadow(0 0 8px rgba(0, 242, 254, 0.5));
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, #ffffff, var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .round-badge {
+      background: rgba(157, 78, 221, 0.2);
+      border: 1px solid var(--accent-purple);
+      color: #e0aaff;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .round-badge:hover {
+      background: rgba(157, 78, 221, 0.35);
+    }
+
+    .top-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-util {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-glass);
+      color: var(--text-main);
+      padding: 8px 13px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-util:hover {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    .btn-util.active {
+      background: rgba(0, 245, 212, 0.16);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+
+    .btn-util.off-mode {
+      background: rgba(255, 190, 11, 0.15);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* КАРТОЧКА СЦЕНЫ (БЕЗ ОПИСАНИЯ) */
+    .scene-section {
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      border-radius: var(--radius-lg);
+      padding: 15px 22px;
+      box-shadow: var(--shadow-glow), inset 0 0 25px rgba(0, 242, 254, 0.04);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .scene-section.rolling {
+      border-color: var(--accent-gold);
+      box-shadow: 0 0 25px rgba(255, 190, 11, 0.25);
+    }
+
+    .scene-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .scene-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .scene-title {
+      font-size: 24px;
+      font-weight: 900;
+      color: #ffffff;
+      line-height: 1.2;
+      outline: none;
+      border-bottom: 1px dashed transparent;
+      display: inline-block;
+      user-select: text;
+    }
+
+    .scene-title:focus {
+      border-bottom-color: var(--accent-cyan);
+    }
+
+    .scene-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .scene-count-badge {
+      padding: 7px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      border: 1px solid var(--accent-cyan);
+      background: rgba(0, 242, 254, 0.14);
+      color: var(--accent-cyan);
+      transition: 0.2s;
+    }
+
+    .scene-count-badge.two-players {
+      border-color: var(--accent-pink);
+      background: rgba(255, 42, 133, 0.18);
+      color: #ff7aa8;
+    }
+
+    .icon-btn {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid var(--border-glass);
+      color: var(--text-main);
+      padding: 6px 11px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .icon-btn.locked {
+      background: rgba(255, 190, 11, 0.2);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* БЛОК КОЛЕСА ВЫБОРА УЧАСТНИКОВ */
+    .wheel-panel {
+      display: none;
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 42, 133, 0.4);
+      border-radius: var(--radius-lg);
+      padding: 18px 22px;
+      box-shadow: var(--shadow-glow), inset 0 0 30px rgba(255, 42, 133, 0.05);
+      gap: 24px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .wheel-panel.open {
+      display: flex;
+    }
+
+    .wheel-canvas-wrap {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      margin: 0 auto;
+      flex-shrink: 0;
+    }
+
+    #participantWheelCanvas {
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 242, 254, 0.25);
+    }
+
+    .wheel-pointer {
+      position: absolute;
+      right: -12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-top: 13px solid transparent;
+      border-bottom: 13px solid transparent;
+      border-right: 22px solid var(--accent-gold);
+      filter: drop-shadow(0 0 8px rgba(255, 190, 11, 0.8));
+      z-index: 5;
+    }
+
+    .wheel-info-col {
+      flex: 1;
+      min-width: 270px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .wheel-title {
+      font-size: 18px;
+      font-weight: 900;
+      text-transform: uppercase;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .wheel-sub {
+      font-size: 13.5px;
+      color: #cbd5e1;
+      line-height: 1.45;
+    }
+
+    .wheel-mode-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .wheel-result-banner {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      padding: 11px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent-gold);
+    }
+
+    /* ПАНЕЛЬ ЗАПУСКА РАНДОМА */
+    .control-bar {
+      display: grid;
+      grid-template-columns: 2fr 1.2fr 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .control-bar.no-voices {
+      grid-template-columns: 2fr 1.2fr 1fr 1fr;
+    }
+
+    @media (max-width: 920px) {
+      .control-bar,
+      .control-bar.no-voices {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .btn-roll-main {
+      background: linear-gradient(135deg, #00c6ff 0%, #0072ff 50%, #7b2cbf 100%);
+      border: none;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(0, 114, 255, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+
+    .btn-roll-main:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 198, 255, 0.6);
+    }
+
+    .btn-roll-wheel {
+      background: linear-gradient(135deg, #ff2a85 0%, #9d4edd 100%);
+      border: none;
+      color: #ffffff;
+      font-size: 13.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(255, 42, 133, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+
+    .btn-roll-wheel:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 22px rgba(255, 42, 133, 0.55);
+    }
+
+    .btn-roll-sub {
+      background: var(--bg-card);
+      border: 1px solid var(--border-glass);
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: 0.2s;
+    }
+
+    .btn-roll-sub:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent-cyan);
+    }
+
+    /* ОЧЕРЕДЬ ИГРОКОВ И ГОЛОСА */
+    .players-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 4px;
+    }
+
+    .players-header-title {
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+    }
+
+    .players-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+
+    .player-card {
+      background: var(--bg-card);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow-glow);
+      position: relative;
+      transition: all 0.25s ease;
+    }
+
+    .player-card.inactive {
+      opacity: 0.42;
+      filter: grayscale(0.65);
+    }
+
+    .player-card.rolling-card {
+      border-color: var(--accent-purple);
+      transform: scale(0.99);
+    }
+
+    .player-card.is-me {
+      border: 2px solid var(--accent-cyan);
+      box-shadow: 0 0 28px rgba(0, 242, 254, 0.28);
+    }
+
+    .order-slot-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .order-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 5px 11px;
+      border-radius: 8px;
+      background: linear-gradient(90deg, rgba(0, 242, 254, 0.2), rgba(157, 78, 221, 0.25));
+      border: 1px solid var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .order-badge.slot-1 {
+      background: linear-gradient(90deg, rgba(255, 190, 11, 0.25), rgba(255, 84, 0, 0.25));
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    .order-badge.resting {
+      background: rgba(255, 42, 133, 0.15);
+      border-color: rgba(255, 42, 133, 0.4);
+      color: #ff7aa8;
+    }
+
+    .card-top-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-leader {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255, 190, 11, 0.18);
+      color: var(--accent-gold);
+      border: 1px solid rgba(255, 190, 11, 0.4);
+    }
+
+    .status-ruiner {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255, 42, 133, 0.18);
+      color: var(--accent-pink);
+      border: 1px solid rgba(255, 42, 133, 0.4);
+    }
+
+    .status-you {
+      font-size: 11px;
+      font-weight: 900;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(0, 242, 254, 0.2);
+      color: var(--accent-cyan);
+      border: 1px solid var(--accent-cyan);
+    }
+
+    .player-name-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .player-name-input {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: #ffffff;
+      font-size: 20px;
+      font-weight: 800;
+      padding: 4px 8px;
+      width: 100%;
+      outline: none;
+      transition: 0.2s;
+    }
+
+    .player-name-input:focus,
+    .player-name-input:hover {
+      border-color: var(--border-glass);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Голосовой фильтр внутри карточки */
+    .voice-box {
+      background: rgba(157, 78, 221, 0.12);
+      border: 1px solid rgba(157, 78, 221, 0.4);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: 0.2s;
+    }
+
+    .voice-box.free-mode {
+      background: rgba(0, 245, 212, 0.07);
+      border: 1px dashed rgba(0, 245, 212, 0.35);
+    }
+
+    .voice-box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .voice-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #e0aaff;
+    }
+
+    .voice-box.free-mode .voice-label {
+      color: var(--accent-green);
+    }
+
+    .voice-controls {
+      display: flex;
+      gap: 4px;
+    }
+
+    .mini-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+
+    .mini-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .mini-btn.locked {
+      background: rgba(255, 190, 11, 0.25);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    .voice-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.25;
+    }
+
+    .voice-desc {
+      font-size: 12.5px;
+      color: #cbd5e1;
+      line-height: 1.35;
+    }
+
+    .awards-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: auto;
+    }
+
+    .award-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-glass);
+      border-radius: 10px;
+      padding: 7px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .award-pill.oscar {
+      border-color: rgba(255, 190, 11, 0.3);
+    }
+
+    .award-pill.raspberry {
+      border-color: rgba(255, 42, 133, 0.3);
+    }
+
+    .award-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .award-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .score-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      border: 1px solid var(--border-glass);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: 0.15s;
+    }
+
+    .score-btn:hover {
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    /* МОДАЛЬНОЕ ОКНО СПИСКОВ */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-content {
+      background: #141826;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      max-width: 780px;
+      width: 100%;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 650px) {
+      .modal-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .modal-col label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    .modal-col textarea {
+      width: 100%;
+      height: 240px;
+      background: #0b0d14;
+      border: 1px solid var(--border-glass);
+      border-radius: 10px;
+      color: #fff;
+      padding: 10px;
+      font-size: 12.5px;
+      font-family: monospace;
+      resize: vertical;
+      outline: none;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    /* РЕЖИМ ПРОСМОТРА СТРИМЕРА */
+    body.streamer-mode .director-only {
+      display: none !important;
+    }
+
+    body.streamer-mode .streamer-personal-banner {
+      display: flex !important;
+    }
+
+    body.streamer-mode .player-name-input {
+      pointer-events: none;
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ОКНО РЕГИСТРАЦИИ СТРИМЕРА ПО ССЫЛКЕ -->
+<div class="registration-overlay" id="registrationOverlay">
+  <div class="reg-card">
+    <div class="reg-icon">🎬</div>
+    <div class="reg-title">Dub Together // Вход</div>
+    <div class="reg-sub">
+      Введите свой никнейм — он автоматически появится на пульте режиссёра, а у вас откроется живая очередь игроков, колесо и условия озвучки.
+    </div>
+
+    <div class="reg-input-group">
+      <label>Код комнаты режиссёра</label>
+      <input type="text" id="regRoomInput" class="reg-input" value="DUB-ROOM-1" spellcheck="false" />
+    </div>
+
+    <div class="reg-input-group">
+      <label>Ваш никнейм на стриме</label>
+      <input type="text" id="regNickInput" class="reg-input" placeholder="Например: Колянчик" spellcheck="false" autofocus />
+    </div>
+
+    <button class="btn-roll-main" id="btnSubmitRegistration" style="width: 100%;">
+      🚀 Войти в лобби и открыть табло
+    </button>
+
+    <button class="reg-switch-director" id="btnBackToDirector">
+      Я режиссёр — вернуться к пульту управления
+    </button>
+  </div>
+</div>
+
+<div class="app-container">
+  <!-- ШАПКА -->
+  <header class="header">
+    <div class="brand">
+      <span class="clapper-icon">🎬</span>
+      <div>
+        <div class="brand-title">Dub Together // Пульт</div>
+        <div class="brand-sub" id="headerSubText">Сцена ➔ Колесо участников ➔ Очередь и голоса</div>
+      </div>
+      <span id="roundBadge" class="round-badge" title="Клик — сбросить на 1-й дубль">Дубль #1</span>
+    </div>
+
+    <div class="top-controls">
+      <button class="btn-util director-only" id="btnAddPlayer">➕ Стример</button>
+      <button class="btn-util active director-only" id="btnToggleVoicesMode" title="Включить или отключить рандом голосовых условий">
+        🎙️ Голоса: Вкл
+      </button>
+      <button class="btn-util director-only" id="btnToggleWheelPanel">🎡 Колесо</button>
+      <button class="btn-util director-only" id="btnResetScores" title="Обнулить Оскары и Малины">🧹 Сброс очков</button>
+      <button class="btn-util" id="btnSound">🔊 Звук</button>
+      <button class="btn-util" id="btnObs">🎥 Прозрачный (OBS)</button>
+      <button class="btn-util director-only" id="btnSettings">⚙️ Списки</button>
+      <button class="btn-util director-only" id="btnOpenStreamerReg" title="Переключиться на экран регистрации стримера">👤 Экран стримера</button>
+    </div>
+  </header>
+
+  <!-- ПАНЕЛЬ ССЫЛКИ ДЛЯ СТРИМЕРОВ -->
+  <div class="invite-bar director-only">
+    <div class="invite-left">
+      <span class="sync-dot" id="syncDot" title="Статус синхронизации"></span>
+      <span style="font-size: 13px; font-weight: 700;">Комната:</span>
+      <input type="text" id="roomCodeInput" class="room-code-input" value="DUB-ROOM-1" title="Код комнаты для синхронизации" />
+      <span style="font-size: 12px; color: var(--text-muted);">
+        Киньте ссылку стримеру — он введёт ник и появится в колесе и очереди автоматически
+      </span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn-util" id="btnCopyStreamerLink" style="border-color: var(--accent-cyan); color: var(--accent-cyan);">
+        🔗 Скопировать ссылку для стримеров
+      </button>
+    </div>
+  </div>
+
+  <!-- ЛИЧНАЯ ПЛАШКА СТРИМЕРА -->
+  <div class="streamer-personal-banner" id="streamerBanner">
+    <div class="streamer-personal-info">
+      <span class="streamer-tag-you" id="streamerBannerNick">ВЫ: СТРИМЕР</span>
+      <span style="font-size: 14px; font-weight: 800; color: var(--accent-gold);" id="streamerBannerOrder">
+        ⚡ Ожидание очереди...
+      </span>
+      <span style="font-size: 14px; color: #e0aaff; font-weight: 700;" id="streamerBannerVoice">
+        🎙️ Голос: ожидание
+      </span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button class="icon-btn" id="btnChangeNick">✏️ Сменить ник</button>
+      <button class="icon-btn" id="btnSwitchToDirectorMode" title="Открыть полный пульт режиссёра">🎛️ Режим пульта</button>
+    </div>
+  </div>
+
+  <!-- КАРТОЧКА СЦЕНЫ (ТОЛЬКО НАЗВАНИЕ СЦЕНЫ + ЧИСЛО ЛЮДЕЙ, БЕЗ ОПИСАНИЯ) -->
+  <section class="scene-section" id="sceneSection">
+    <div class="scene-left">
+      <div class="scene-label">
+        <span>🎬 ТЕКУЩАЯ СЦЕНА / ФРАГМЕНТ</span>
+      </div>
+      <div id="sceneTitle" class="scene-title" contenteditable="true" spellcheck="false">
+        Сцена #1 — Дуэль взглядов
+      </div>
+    </div>
+
+    <div class="scene-actions">
+      <button class="scene-count-badge" id="btnTogglePlayerCount" title="Клик — переключить: Сцена на 2-х человек или На всех (3+)">
+        👥 Формат: На всех (3)
+      </button>
+      <button class="icon-btn director-only" id="btnActivateAllPlayers" title="Вернуть всех 3-х участников в строй">
+        👥 Всех в строй
+      </button>
+      <button class="icon-btn director-only" id="btnLockScene" title="Закрепить сцену">
+        🔓 Закрепить
+      </button>
+    </div>
+  </section>
+
+  <!-- ВИЗУАЛЬНОЕ КОЛЕСО ВЫБОРА УЧАСТНИКОВ (ДЛЯ СЦЕН НА 2 ЧЕЛОВЕК) -->
+  <section class="wheel-panel" id="wheelPanel">
+    <div class="wheel-canvas-wrap">
+      <div class="wheel-pointer"></div>
+      <canvas id="participantWheelCanvas" width="260" height="260"></canvas>
+    </div>
+
+    <div class="wheel-info-col">
+      <div class="wheel-title">
+        <span>🎡 Колесо отбора участников на сцену (2 из 3)</span>
+      </div>
+      <div class="wheel-sub">
+        Когда выпадает сцена на двоих, колесо определяет, кто озвучивает этот фрагмент, а кто отдыхает в этом дубле.
+      </div>
+
+      <div class="wheel-mode-row director-only">
+        <button class="btn-util active" id="btnWheelModeSitOut" title="1 прокрут: колесо выбирает одного, кто отдыхает, а двое других идут в озвучку">
+          ⚡ 1 прокрут: Кто отдыхает?
+        </button>
+        <button class="btn-util" id="btnWheelModePickTwo" title="2 прокрута подряд: колесо выбирает 1-го и 2-го участника">
+          🎯 2 прокрута: Выбрать 1-го и 2-го
+        </button>
+      </div>
+
+      <div class="wheel-result-banner" id="wheelResultBanner">
+        Готово к прокруту! Нажмите «Крутить колесо (На 2-х)».
+      </div>
+
+      <div class="wheel-mode-row director-only">
+        <button class="btn-roll-wheel" id="btnSpinWheelNow" style="padding: 11px 20px;">
+          🎡 Крутить колесо участников
+        </button>
+        <button class="icon-btn" id="btnCloseWheelPanel">Скрыть колесо</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- КНОПКИ РАНДОМА (ТОЛЬКО У РЕЖИССЁРА) -->
+  <div class="control-bar director-only" id="controlBar">
+    <button class="btn-roll-main" id="btnRollAll">
+      <span id="btnRollAllText">🎲 КРУТИТЬ РАУНД (СЦЕНА + ОЧЕРЕДЬ + ГОЛОСА)</span>
+    </button>
+    <button class="btn-roll-wheel" id="btnQuickWheel2P" title="Открыть и крутануть колесо отбора 2 участников из 3">
+      🎡 Колесо на 2-х
+    </button>
+    <button class="btn-roll-sub" id="btnRollScene">🎬 Только сцену</button>
+    <button class="btn-roll-sub" id="btnRollOrder">🔀 Только очередь</button>
+    <button class="btn-roll-sub" id="btnRollVoices">🎙️ Только голоса</button>
+  </div>
+
+  <!-- ТАБЛО ОЧЕРЕДИ И ГОЛОСОВ -->
+  <div class="players-header">
+    <span class="players-header-title" id="playersHeaderTitle">
+      📋 Очередь озвучки и личные голоса (карточки стоят по порядку вступления)
+    </span>
+  </div>
+
+  <div class="players-grid" id="playersGrid"></div>
+</div>
+
+<!-- МОДАЛКА РЕДАКТИРОВАНИЯ СПИСКОВ -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal-content">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 style="font-size:17px;">⚙️ Редактор сцен из пака и голосовых фильтров</h3>
+      <button class="icon-btn" id="btnCloseModal">✖ Закрыть</button>
+    </div>
+    <p style="font-size:12.5px; color:var(--text-muted);">
+      Для сцен можно указать число людей через <b>| 2</b> или <b>| 3</b> (например: <b>Сцена из Матрицы | 2</b>). Если выпадет сцена с <b>| 2</b>, пульт сам включит режим на двоих!
+    </p>
+    <div class="modal-grid">
+      <div class="modal-col">
+        <label>🎬 Список сцен (Название | кол-во людей 2 или 3)</label>
+        <textarea id="textareaScenes"></textarea>
+      </div>
+      <div class="modal-col">
+        <label>🎙️ Голосовые фильтры (Название | описание)</label>
+        <textarea id="textareaVoices"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-util" id="btnRestoreDefaults">🔄 Вернуть стандартные списки</button>
+      <button class="btn-roll-main" id="btnSaveLists" style="padding:10px 22px; font-size:14px;">💾 Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // СТАНДАРТНЫЕ СЦЕНЫ (с поддержкой пометки | 2 для сцен на двоих и | 3 для сцен на троих)
+  const DEFAULT_SCENES = [
+    "Сцена #1 — Дуэль взглядов | 2",
+    "Сцена #2 — Разборка втроём | 3",
+    "Сцена #3 — Допрос с пристрастием | 2",
+    "Сцена #4 — Семейный скандал | 2",
+    "Сцена #5 — Ограбление века | 3",
+    "Сцена #6 — Переговоры на повышенных | 2",
+    "Сцена #7 — Секретное совещание | 3",
+    "Сцена #8 — Свидание пошло не по плану | 2"
+  ];
+
+  // СТАНДАРТНЫЕ ГОЛОСОВЫЕ ФИЛЬТРЫ
+  const DEFAULT_VOICES = [
+    "VHS-переводчик 90-х | Зажми нос пальцами и говори максимально гнусаво и монотонно.",
+    "ASMR-психопат | Экстремально близко к микрофону, только влажным шёпотом, даже если на экране взрывы.",
+    "Оперный тенор / Мюзикл | Запрещено говорить обычно — все реплики нужно пропевать с лютым вибрато.",
+    "Прокуренный батя | Максимально низкий, хриплый голос с кряхтением и вздохами «эх, молодёжь».",
+    "Эпичный трейлер | Каждое слово произносится пафосным басом, будто от этого зависит судьба Вселенной.",
+    "Гелиевый мультик | Озвучивай на максимально высоком писклявом фальцете.",
+    "Запыхавшийся марафонец | Тяжёлая одышка после каждого слова, будто только что бежал за автобусом 3 км.",
+    "Аниме-переигрывание | Резкие перепады от милого голоса до гортанного крика с придыханием «Н-НАНИ?!».",
+    "Футбольный комментатор | Тараторь со скоростью пулемёта и срывайся на крик в конце фразы.",
+    "Диктор советского радио | Идеальная осанка, чеканная дикция и торжественная интонация.",
+    "Сонный в 4 утра | Постоянно зевай прямо в середине фраз и говори так, будто засыпаешь у микрофона.",
+    "Истерический смех | Произноси все свои реплики сквозь неудержимый смех или всхлипывания.",
+    "Робот-автоответчик | Руби слова по слогам без единой эмоции с металлическим оттенком.",
+    "Злодей из мультика | Постоянно потирай руки и вставляй коварное «Муа-ха-ха!» после фраз.",
+    "Кавказский тост | Говори размеренно, с акцентом и превращай каждую реплику в мудрую притчу.",
+    "Рэп-фристайл | Читай свои реплики ритмично под воображаемый бит, качая головой."
+  ];
+
+  const WHEEL_COLORS = ["#00c6ff", "#9d4edd", "#ff2a85", "#ffbe0b", "#00f5d4", "#ff6b35"];
+  const STORAGE_KEY = "dub_together_director_v5_freevoice";
+  const STREAMER_NICK_KEY = "dub_together_my_nick_v5";
+
+  const urlParams = new URLSearchParams(window.location.search);
+  let isStreamerMode = urlParams.get("role") === "streamer";
+  let myStreamerNick = localStorage.getItem(STREAMER_NICK_KEY) || "";
+
+  let state = {
+    roomCode: urlParams.get("room") || "DUB-ROOM-1",
+    round: 1,
+    soundEnabled: true,
+    obsTransparent: false,
+    voicesEnabled: true, // Вкл/Выкл рандома голосовых эффектов
+    sceneLocked: false,
+    wheelPanelOpen: true,
+    wheelMode: "SIT_OUT",
+    wheelBannerText: "Готово к прокруту! Нажмите «Крутить колесо».",
+    currentScene: {
+      title: "Сцена #1 — Дуэль взглядов",
+      requiredPlayers: 2
+    },
+    scenesText: DEFAULT_SCENES.join("\n"),
+    voicesText: DEFAULT_VOICES.join("\n"),
+    players: [
+      {
+        id: "p1",
+        name: "Нейроэль",
+        active: true,
+        orderSlot: 1,
+        voiceTitle: "VHS-переводчик 90-х",
+        voiceDesc: "Зажми нос пальцами и говори максимально гнусаво и монотонно.",
+        voiceLocked: false,
+        oscars: 0,
+        raspberries: 0
+      },
+      {
+        id: "p2",
+        name: "MitraE1",
+        active: true,
+        orderSlot: 2,
+        voiceTitle: "ASMR-психопат",
+        voiceDesc: "Экстремально близко к микрофону, только влажным шёпотом, даже если на экране взрывы.",
+        voiceLocked: false,
+        oscars: 0,
+        raspberries: 0
+      },
+      {
+        id: "p3",
+        name: "Колянчик",
+        active: true,
+        orderSlot: 3,
+        voiceTitle: "Футбольный комментатор",
+        voiceDesc: "Тараторь со скоростью пулемёта и срывайся на крик в конце фразы.",
+        voiceLocked: false,
+        oscars: 0,
+        raspberries: 0
+      }
+    ]
+  };
+
+  let currentWheelAngle = 0;
+  let isWheelSpinning = false;
+
+  function loadState() {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        state = { ...state, ...parsed };
+      }
+      if (urlParams.get("room")) {
+        state.roomCode = urlParams.get("room").toUpperCase();
+      }
+    } catch (e) {
+      console.warn("Ошибка чтения сохранения:", e);
+    }
+  }
+
+  function saveState(broadcast = true) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {}
+    if (broadcast && !isStreamerMode) {
+      broadcastStateToStreamers();
+    }
+  }
+
+  // СИНХРОНИЗАЦИЯ (BroadcastChannel + LocalStorage + MQTT)
+  const localChannel = ("BroadcastChannel" in window) ? new BroadcastChannel("dub_together_sync_v5") : null;
+  let mqttClient = null;
+
+  function getTopicBase() {
+    return `dub_together_live_v5/${(state.roomCode || "DUB-ROOM-1").trim().toUpperCase()}`;
+  }
+
+  function initNetworkSync() {
+    if (localChannel) {
+      localChannel.onmessage = (ev) => handleIncomingMessage(ev.data);
+    }
+    window.addEventListener("storage", (e) => {
+      if (e.key === STORAGE_KEY && e.newValue && isStreamerMode) {
+        try {
+          const updated = JSON.parse(e.newValue);
+          applyRemoteState(updated);
+        } catch (err) {}
+      } else if (e.key === STORAGE_KEY + "_reg" && e.newValue && !isStreamerMode) {
+        try {
+          const msg = JSON.parse(e.newValue);
+          handleIncomingMessage(msg);
+        } catch (err) {}
+      }
+    });
+
+    if (typeof mqtt !== "undefined") {
+      try {
+        mqttClient = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {
+          clientId: "dub_" + Math.random().toString(16).slice(2, 10),
+          clean: true,
+          reconnectPeriod: 3000
+        });
+
+        mqttClient.on("connect", () => {
+          const dot = document.getElementById("syncDot");
+          if (dot) dot.classList.add("online");
+          subscribeToRoomTopics();
+          if (!isStreamerMode) {
+            broadcastStateToStreamers();
+          } else if (myStreamerNick) {
+            sendPlayerRegistration(myStreamerNick);
+          }
+        });
+
+        mqttClient.on("message", (topic, payload) => {
+          try {
+            const data = JSON.parse(payload.toString());
+            handleIncomingMessage(data);
+          } catch (err) {}
+        });
+      } catch (err) {}
+    }
+  }
+
+  function subscribeToRoomTopics() {
+    if (!mqttClient || !mqttClient.connected) return;
+    const base = getTopicBase();
+    mqttClient.subscribe(`${base}/state`, { qos: 0 });
+    mqttClient.subscribe(`${base}/action`, { qos: 0 });
+  }
+
+  function broadcastStateToStreamers(extraAction = null, wheelData = null) {
+    const packet = {
+      type: "STATE_UPDATE",
+      roomCode: state.roomCode,
+      extraAction,
+      wheelData,
+      payload: {
+        round: state.round,
+        voicesEnabled: state.voicesEnabled,
+        wheelPanelOpen: state.wheelPanelOpen,
+        wheelBannerText: state.wheelBannerText,
+        currentScene: state.currentScene,
+        players: state.players
+      }
+    };
+
+    if (localChannel) {
+      localChannel.postMessage(packet);
+    }
+    if (mqttClient && mqttClient.connected) {
+      mqttClient.publish(`${getTopicBase()}/state`, JSON.stringify(packet), { retain: true });
+    }
+  }
+
+  function sendPlayerRegistration(nickname) {
+    const packet = {
+      type: "REGISTER_PLAYER",
+      roomCode: state.roomCode,
+      name: nickname,
+      time: Date.now()
+    };
+
+    try {
+      localStorage.setItem(STORAGE_KEY + "_reg", JSON.stringify(packet));
+    } catch (e) {}
+
+    if (localChannel) {
+      localChannel.postMessage(packet);
+    }
+    if (mqttClient && mqttClient.connected) {
+      mqttClient.publish(`${getTopicBase()}/action`, JSON.stringify(packet));
+    }
+  }
+
+  function handleIncomingMessage(data) {
+    if (!data || data.roomCode !== state.roomCode) return;
+
+    if (data.type === "REGISTER_PLAYER" && !isStreamerMode && data.name) {
+      registerOrActivatePlayerOnDirector(data.name);
+    }
+
+    if (data.type === "STATE_UPDATE" && isStreamerMode && data.payload) {
+      if (data.extraAction === "WHEEL_SPIN_START" && data.wheelData) {
+        state.wheelPanelOpen = true;
+        renderAll();
+        animateWheelCanvasToAngle(data.wheelData.names, data.wheelData.targetAngle, data.wheelData.duration, () => {});
+        return;
+      }
+      if (data.extraAction === "ROLL_START") {
+        playTick(540);
+      } else if (data.extraAction === "ROLL_FINISH") {
+        playFinishChord();
+      }
+      applyRemoteState(data.payload);
+    }
+  }
+
+  function applyRemoteState(remote) {
+    state.round = remote.round ?? state.round;
+    state.voicesEnabled = remote.voicesEnabled ?? state.voicesEnabled;
+    state.wheelPanelOpen = remote.wheelPanelOpen ?? state.wheelPanelOpen;
+    state.wheelBannerText = remote.wheelBannerText ?? state.wheelBannerText;
+    state.currentScene = remote.currentScene || state.currentScene;
+    state.players = remote.players || state.players;
+    renderAll();
+  }
+
+  function registerOrActivatePlayerOnDirector(rawNick) {
+    const cleanNick = rawNick.trim();
+    if (!cleanNick) return;
+
+    const existing = state.players.find(
+      p => p.name.trim().toLowerCase() === cleanNick.toLowerCase()
+    );
+
+    if (existing) {
+      existing.active = true;
+    } else {
+      const nextSlot = state.players.length + 1;
+      const voices = parseVoiceList(state.voicesText, DEFAULT_VOICES);
+      const randomVoice = voices[Math.floor(Math.random() * voices.length)];
+      state.players.push({
+        id: "p_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+        name: cleanNick,
+        active: true,
+        orderSlot: nextSlot,
+        voiceTitle: randomVoice.title,
+        voiceDesc: randomVoice.desc,
+        voiceLocked: false,
+        oscars: 0,
+        raspberries: 0
+      });
+    }
+
+    playOscarSound();
+    saveState(true);
+    renderAll();
+  }
+
+  function parseSceneList(rawText, fallbackArray) {
+    const lines = rawText.split("\n").map(l => l.trim()).filter(Boolean);
+    const source = lines.length > 0 ? lines : fallbackArray;
+    return source.map(line => {
+      const parts = line.split("|");
+      const title = (parts[0] || "Сцена").trim();
+      const countRaw = parseInt((parts[1] || "").trim(), 10);
+      const requiredPlayers = (countRaw === 2) ? 2 : 3;
+      return { title, requiredPlayers };
+    });
+  }
+
+  function parseVoiceList(rawText, fallbackArray) {
+    const lines = rawText.split("\n").map(l => l.trim()).filter(Boolean);
+    const source = lines.length > 0 ? lines : fallbackArray;
+    return source.map(line => {
+      const parts = line.split("|");
+      const title = (parts[0] || "Голос").trim();
+      const desc = (parts[1] || "Отыграйте этот голос!").trim();
+      return { title, desc };
+    });
+  }
+
+  // WEB AUDIO СИНТЕЗАТОР ЗВУКОВ
+  let audioCtx = null;
+  function getAudioCtx() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtx;
+  }
+
+  function playTick(freq = 520) {
+    if (!state.soundEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.045);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.05);
+    } catch (e) {}
+  }
+
+  function playFinishChord() {
+    if (!state.soundEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.04);
+        gain.gain.setValueAtTime(0.09, ctx.currentTime + idx * 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.04 + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.04);
+        osc.stop(ctx.currentTime + idx * 0.04 + 0.36);
+      });
+    } catch (e) {}
+  }
+
+  function playOscarSound() {
+    if (!state.soundEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      [587.33, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.09);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime + i * 0.09);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.09 + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.09);
+        osc.stop(ctx.currentTime + i * 0.09 + 0.26);
+      });
+    } catch (e) {}
+  }
+
+  function playRaspberrySound() {
+    if (!state.soundEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      [311.13, 277.18].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.14);
+        gain.gain.setValueAtTime(0.07, ctx.currentTime + i * 0.14);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.14 + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.14);
+        osc.stop(ctx.currentTime + i * 0.14 + 0.24);
+      });
+    } catch (e) {}
+  }
+
+  // ОТРИСОВКА И ВРАЩЕНИЕ CANVAS-КОЛЕСА УЧАСТНИКОВ
+  function drawParticipantWheel(namesList, angle = currentWheelAngle) {
+    const canvas = document.getElementById("participantWheelCanvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const radius = Math.min(cx, cy) - 8;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const names = (namesList && namesList.length > 0)
+      ? namesList
+      : state.players.map(p => p.name);
+
+    const count = Math.max(1, names.length);
+    const slice = (Math.PI * 2) / count;
+
+    for (let i = 0; i < count; i++) {
+      const start = angle + i * slice;
+      const end = start + slice;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius, start, end);
+      ctx.closePath();
+      ctx.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length];
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#0b0d14";
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(start + slice / 2);
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 14px 'Segoe UI', sans-serif";
+      ctx.shadowColor = "rgba(0,0,0,0.65)";
+      ctx.shadowBlur = 4;
+      ctx.fillText(names[i].slice(0, 14), radius - 16, 5);
+      ctx.restore();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+    ctx.fillStyle = "#0b0d14";
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#ffbe0b";
+    ctx.stroke();
+  }
+
+  function animateWheelCanvasToAngle(namesList, targetAngle, durationMs, onComplete) {
+    if (isWheelSpinning) return;
+    isWheelSpinning = true;
+
+    const startAngle = currentWheelAngle % (Math.PI * 2);
+    const startTime = performance.now();
+    const count = Math.max(1, namesList.length);
+    const sliceAngle = (Math.PI * 2) / count;
+    let lastTickSlice = -1;
+
+    function frame(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+
+      currentWheelAngle = startAngle + (targetAngle - startAngle) * easeOut;
+      drawParticipantWheel(namesList, currentWheelAngle);
+
+      const norm = ((Math.PI * 2) - (currentWheelAngle % (Math.PI * 2))) % (Math.PI * 2);
+      const currentSlice = Math.floor(norm / sliceAngle);
+      if (currentSlice !== lastTickSlice && progress < 0.98) {
+        lastTickSlice = currentSlice;
+        playTick(480 + (currentSlice % 4) * 60);
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        isWheelSpinning = false;
+        playFinishChord();
+        if (onComplete) onComplete();
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  function computeTargetAngleForWinner(winnerIdx, totalItems) {
+    const sliceAngle = (Math.PI * 2) / totalItems;
+    const winnerCenter = (winnerIdx + 0.5) * sliceAngle;
+    const desiredMod = ((Math.PI * 2) - winnerCenter) % (Math.PI * 2);
+    const extraSpins = (5 + Math.floor(Math.random() * 2)) * (Math.PI * 2);
+    return extraSpins + desiredMod;
+  }
+
+  // ЗАПУСК КОЛЕСА ДЛЯ СЦЕНЫ НА 2 ЧЕЛОВЕК
+  function spinParticipantWheelForTwo(incrementRound = false) {
+    if (isWheelSpinning) return;
+    if (state.players.length < 2) return;
+
+    state.wheelPanelOpen = true;
+    state.currentScene.requiredPlayers = 2;
+
+    const allPlayers = [...state.players];
+    const names = allPlayers.map(p => p.name);
+
+    if (state.wheelMode === "SIT_OUT" || allPlayers.length <= 2) {
+      const sitOutIdx = Math.floor(Math.random() * allPlayers.length);
+      const sitOutPlayer = allPlayers[sitOutIdx];
+      const targetAngle = computeTargetAngleForWinner(sitOutIdx, allPlayers.length);
+      const duration = 2800;
+
+      state.wheelBannerText = "🎡 Крутим колесо: определяем, кто отдыхает в этой сцене...";
+      renderAll();
+
+      broadcastStateToStreamers("WHEEL_SPIN_START", {
+        names,
+        targetAngle,
+        duration
+      });
+
+      animateWheelCanvasToAngle(names, targetAngle, duration, () => {
+        const chosenTwo = shuffleArray(allPlayers.filter((_, idx) => idx !== sitOutIdx));
+        chosenTwo.forEach((p, idx) => {
+          p.active = true;
+          p.orderSlot = idx + 1;
+        });
+
+        sitOutPlayer.active = false;
+        sitOutPlayer.orderSlot = chosenTwo.length + 1;
+
+        state.players.sort((a, b) => a.orderSlot - b.orderSlot);
+        if (state.voicesEnabled) randomizeVoicesForAll();
+        if (incrementRound) state.round++;
+
+        state.wheelBannerText = `☕ Отдыхает: ${sitOutPlayer.name}  |  ⚡ Озвучивают: 1) ${chosenTwo[0]?.name || ""} и 2) ${chosenTwo[1]?.name || ""}`;
+        saveState(false);
+        broadcastStateToStreamers("ROLL_FINISH");
+        renderAll();
+      });
+    } else {
+      const firstIdx = Math.floor(Math.random() * allPlayers.length);
+      const firstPlayer = allPlayers[firstIdx];
+      const targetAngle1 = computeTargetAngleForWinner(firstIdx, allPlayers.length);
+      const duration1 = 2400;
+
+      state.wheelBannerText = "🎡 Прокрут #1: выбираем, кто вступает ПЕРВЫМ...";
+      renderAll();
+
+      broadcastStateToStreamers("WHEEL_SPIN_START", {
+        names,
+        targetAngle: targetAngle1,
+        duration: duration1
+      });
+
+      animateWheelCanvasToAngle(names, targetAngle1, duration1, () => {
+        const remaining = allPlayers.filter((_, idx) => idx !== firstIdx);
+        const remNames = remaining.map(p => p.name);
+        const secondIdx = Math.floor(Math.random() * remaining.length);
+        const secondPlayer = remaining[secondIdx];
+        const targetAngle2 = computeTargetAngleForWinner(secondIdx, remaining.length);
+        const duration2 = 2400;
+
+        state.wheelBannerText = `⚡ 1-й: ${firstPlayer.name}! Крутим колесо для 2-го участника...`;
+        renderAll();
+
+        setTimeout(() => {
+          broadcastStateToStreamers("WHEEL_SPIN_START", {
+            names: remNames,
+            targetAngle: targetAngle2,
+            duration: duration2
+          });
+
+          animateWheelCanvasToAngle(remNames, targetAngle2, duration2, () => {
+            firstPlayer.active = true;
+            firstPlayer.orderSlot = 1;
+
+            secondPlayer.active = true;
+            secondPlayer.orderSlot = 2;
+
+            const resting = remaining.filter((_, idx) => idx !== secondIdx);
+            resting.forEach((p, i) => {
+              p.active = false;
+              p.orderSlot = 3 + i;
+            });
+
+            state.players.sort((a, b) => a.orderSlot - b.orderSlot);
+            if (state.voicesEnabled) randomizeVoicesForAll();
+            if (incrementRound) state.round++;
+
+            const restNames = resting.map(p => p.name).join(", ");
+            state.wheelBannerText = `⚡ Озвучивают: 1) ${firstPlayer.name}, 2) ${secondPlayer.name}  |  ☕ Отдыхает: ${restNames}`;
+            saveState(false);
+            broadcastStateToStreamers("ROLL_FINISH");
+            renderAll();
+          });
+        }, 450);
+      });
+    }
+  }
+
+  // ЛОГИКА РАНДОМА
+  function shuffleArray(arr) {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  function pickRandomScene() {
+    if (state.sceneLocked) return;
+    const scenes = parseSceneList(state.scenesText, DEFAULT_SCENES);
+    const filtered = scenes.filter(s => s.title !== state.currentScene.title);
+    const pool = filtered.length > 0 ? filtered : scenes;
+    state.currentScene = pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function activateAllPlayersAndShuffle() {
+    state.players.forEach(p => (p.active = true));
+    const shuffled = shuffleArray(state.players);
+    shuffled.forEach((p, idx) => {
+      p.orderSlot = idx + 1;
+    });
+    state.players = shuffled;
+  }
+
+  function randomizeOrder() {
+    const activePlayers = state.players.filter(p => p.active);
+    const inactivePlayers = state.players.filter(p => !p.active);
+
+    const shuffledActive = shuffleArray(activePlayers);
+    shuffledActive.forEach((p, idx) => {
+      p.orderSlot = idx + 1;
+    });
+    inactivePlayers.forEach((p, idx) => {
+      p.orderSlot = shuffledActive.length + idx + 1;
+    });
+
+    state.players.sort((a, b) => a.orderSlot - b.orderSlot);
+  }
+
+  function randomizeVoicesForAll() {
+    if (!state.voicesEnabled) return;
+    const voices = parseVoiceList(state.voicesText, DEFAULT_VOICES);
+    const shuffledVoices = shuffleArray(voices);
+    let voiceIdx = 0;
+
+    state.players.forEach(player => {
+      if (!player.active || player.voiceLocked) return;
+      const chosen = shuffledVoices[voiceIdx % shuffledVoices.length];
+      player.voiceTitle = chosen.title;
+      player.voiceDesc = chosen.desc;
+      voiceIdx++;
+    });
+  }
+
+  function rerollSinglePlayerVoice(playerId) {
+    if (!state.voicesEnabled) return;
+    const player = state.players.find(p => p.id === playerId);
+    if (!player || player.voiceLocked) return;
+    const voices = parseVoiceList(state.voicesText, DEFAULT_VOICES);
+    const otherVoices = voices.filter(v => v.title !== player.voiceTitle);
+    const pool = otherVoices.length > 0 ? otherVoices : voices;
+    const chosen = pool[Math.floor(Math.random() * pool.length)];
+    player.voiceTitle = chosen.title;
+    player.voiceDesc = chosen.desc;
+    playTick(680);
+    saveState(true);
+    renderAll();
+  }
+
+  function animateRoll({ rollScene, rollOrder, rollVoices, incrementRound }) {
+    const sceneEl = document.getElementById("sceneSection");
+    if (rollScene && !state.sceneLocked) sceneEl.classList.add("rolling");
+
+    const shouldRollVoices = rollVoices && state.voicesEnabled;
+
+    let ticks = 0;
+    const maxTicks = 8;
+    const interval = setInterval(() => {
+      ticks++;
+      playTick(400 + ticks * 35);
+
+      if (rollScene && !state.sceneLocked) pickRandomScene();
+      if (shouldRollVoices) randomizeVoicesForAll();
+      renderScene();
+      renderPlayers(true);
+      broadcastStateToStreamers("ROLL_START");
+
+      if (ticks >= maxTicks) {
+        clearInterval(interval);
+        if (rollScene && !state.sceneLocked) pickRandomScene();
+        sceneEl.classList.remove("rolling");
+
+        if (rollOrder && state.currentScene.requiredPlayers === 2 && state.players.length >= 3) {
+          spinParticipantWheelForTwo(incrementRound);
+          return;
+        }
+
+        if (rollOrder) {
+          if (state.currentScene.requiredPlayers >= 3) {
+            activateAllPlayersAndShuffle();
+          } else {
+            randomizeOrder();
+          }
+        }
+        if (shouldRollVoices) randomizeVoicesForAll();
+        if (incrementRound) state.round++;
+
+        playFinishChord();
+        saveState(false);
+        broadcastStateToStreamers("ROLL_FINISH");
+        renderAll();
+      }
+    }, 60);
+  }
+
+  // ОТРИСОВКА ИНТЕРФЕЙСА
+  function renderHeader() {
+    document.body.classList.toggle("streamer-mode", isStreamerMode);
+    document.getElementById("roundBadge").textContent = `Дубль #${state.round}`;
+    document.getElementById("roomCodeInput").value = state.roomCode;
+
+    const btnSound = document.getElementById("btnSound");
+    btnSound.textContent = state.soundEnabled ? "🔊 Звук" : "🔇 Без звука";
+    btnSound.classList.toggle("active", state.soundEnabled);
+
+    const btnObs = document.getElementById("btnObs");
+    btnObs.classList.toggle("active", state.obsTransparent);
+    document.body.classList.toggle("obs-transparent", state.obsTransparent);
+
+    const btnToggleWheel = document.getElementById("btnToggleWheelPanel");
+    btnToggleWheel.classList.toggle("active", state.wheelPanelOpen);
+
+    // Переключатель голосовых условий
+    const btnVoicesMode = document.getElementById("btnToggleVoicesMode");
+    btnVoicesMode.textContent = state.voicesEnabled ? "🎙️ Голоса: Вкл" : "🎙️ Без условий";
+    btnVoicesMode.classList.toggle("active", state.voicesEnabled);
+    btnVoicesMode.classList.toggle("off-mode", !state.voicesEnabled);
+
+    // Адаптация панели кнопок под вкл/выкл голосов
+    const controlBar = document.getElementById("controlBar");
+    const btnRollVoices = document.getElementById("btnRollVoices");
+    const btnRollAllText = document.getElementById("btnRollAllText");
+    const playersHeaderTitle = document.getElementById("playersHeaderTitle");
+
+    if (state.voicesEnabled) {
+      controlBar.classList.remove("no-voices");
+      btnRollVoices.style.display = "flex";
+      btnRollAllText.textContent = "🎲 КРУТИТЬ РАУНД (СЦЕНА + ОЧЕРЕДЬ + ГОЛОСА)";
+      playersHeaderTitle.textContent = "📋 Очередь озвучки и личные голоса (карточки стоят по порядку вступления)";
+    } else {
+      controlBar.classList.add("no-voices");
+      btnRollVoices.style.display = "none";
+      btnRollAllText.textContent = "🎲 КРУТИТЬ РАУНД (СЦЕНА + ОЧЕРЕДЬ // БЕЗ УСЛОВИЙ)";
+      playersHeaderTitle.textContent = "📋 Очередь озвучки (Режим «Без условий» — отыгрываем сами)";
+    }
+
+    if (isStreamerMode) {
+      document.getElementById("headerSubText").textContent = `Экран участника // Комната ${state.roomCode}`;
+      document.getElementById("sceneTitle").setAttribute("contenteditable", "false");
+
+      const me = state.players.find(
+        p => myStreamerNick && p.name.trim().toLowerCase() === myStreamerNick.trim().toLowerCase()
+      );
+      document.getElementById("streamerBannerNick").textContent = `ВЫ: ${myStreamerNick || "ГОСТЬ"}`;
+      if (me) {
+        document.getElementById("streamerBannerOrder").textContent = me.active
+          ? `⚡ Ваш выход: ${me.orderSlot}-Й В ОЧЕРЕДИ`
+          : `☕ В этой сцене на 2-х вы отдыхаете`;
+
+        if (!me.active) {
+          document.getElementById("streamerBannerVoice").textContent = `🎙️ Пауза на этот дубль`;
+        } else if (!state.voicesEnabled) {
+          document.getElementById("streamerBannerVoice").textContent = `🎙️ Свободный отыгрыш (без условий)`;
+        } else {
+          document.getElementById("streamerBannerVoice").textContent = `🎙️ Ваш голос: ${me.voiceTitle}`;
+        }
+      } else {
+        document.getElementById("streamerBannerOrder").textContent = `⏳ Ожидание добавления на пульте...`;
+        document.getElementById("streamerBannerVoice").textContent = state.voicesEnabled
+          ? `🎙️ Голос появится после старта`
+          : `🎙️ Свободный отыгрыш (без условий)`;
+      }
+    } else {
+      document.getElementById("headerSubText").textContent = state.voicesEnabled
+        ? `Сцена ➔ Колесо участников ➔ Очередь и голоса`
+        : `Сцена ➔ Колесо участников ➔ Очередь (Свободный отыгрыш)`;
+      document.getElementById("sceneTitle").setAttribute("contenteditable", "true");
+    }
+  }
+
+  function renderScene() {
+    document.getElementById("sceneTitle").textContent = state.currentScene.title;
+
+    const badge = document.getElementById("btnTogglePlayerCount");
+    const isTwo = state.currentScene.requiredPlayers === 2;
+    badge.textContent = isTwo ? "👥 Формат: Сцена на 2-х" : `👥 Формат: На всех (${state.players.length})`;
+    badge.classList.toggle("two-players", isTwo);
+
+    const btnLock = document.getElementById("btnLockScene");
+    btnLock.textContent = state.sceneLocked ? "🔒 Закреплено" : "🔓 Закрепить";
+    btnLock.classList.toggle("locked", state.sceneLocked);
+  }
+
+  function renderWheelSection() {
+    const panel = document.getElementById("wheelPanel");
+    panel.classList.toggle("open", !!state.wheelPanelOpen);
+
+    document.getElementById("wheelResultBanner").textContent = state.wheelBannerText;
+
+    const btnSitOut = document.getElementById("btnWheelModeSitOut");
+    const btnPickTwo = document.getElementById("btnWheelModePickTwo");
+    btnSitOut.classList.toggle("active", state.wheelMode === "SIT_OUT");
+    btnPickTwo.classList.toggle("active", state.wheelMode === "PICK_TWO");
+
+    if (!isWheelSpinning) {
+      drawParticipantWheel(state.players.map(p => p.name), currentWheelAngle);
+    }
+  }
+
+  function renderPlayers(isRolling = false) {
+    const grid = document.getElementById("playersGrid");
+    grid.innerHTML = "";
+
+    const maxOscars = Math.max(0, ...state.players.map(p => p.oscars));
+    const maxRasp = Math.max(0, ...state.players.map(p => p.raspberries));
+
+    state.players.forEach(player => {
+      const isMe = isStreamerMode && myStreamerNick &&
+        player.name.trim().toLowerCase() === myStreamerNick.trim().toLowerCase();
+
+      const card = document.createElement("div");
+      card.className = `player-card ${!player.active ? "inactive" : ""} ${isRolling ? "rolling-card" : ""} ${isMe ? "is-me" : ""}`;
+
+      const isLeader = maxOscars > 0 && player.oscars === maxOscars;
+      const isRuiner = maxRasp > 0 && player.raspberries === maxRasp;
+
+      const voiceSectionHtml = state.voicesEnabled
+        ? `
+          <div class="voice-box">
+            <div class="voice-box-header">
+              <span class="voice-label">🎙️ Голосовой отыгрыш</span>
+              <div class="voice-controls director-only">
+                <button class="mini-btn ${player.voiceLocked ? "locked" : ""}" data-action="lock-voice" data-id="${player.id}" title="Закрепить этот голос">
+                  ${player.voiceLocked ? "🔒" : "🔓"}
+                </button>
+                <button class="mini-btn" data-action="reroll-voice" data-id="${player.id}" title="Перекрутить голос только этому стримеру">
+                  🔄
+                </button>
+              </div>
+            </div>
+            <div class="voice-title">${player.voiceTitle}</div>
+            <div class="voice-desc">${player.voiceDesc}</div>
+          </div>
+        `
+        : `
+          <div class="voice-box free-mode">
+            <div class="voice-box-header">
+              <span class="voice-label">🎙️ Режим озвучки</span>
+            </div>
+            <div class="voice-title">Свободный отыгрыш</div>
+            <div class="voice-desc">Озвучиваем сами, без голосовых условий и ограничений.</div>
+          </div>
+        `;
+
+      card.innerHTML = `
+        <div class="order-slot-bar">
+          <div class="order-badge ${player.orderSlot === 1 && player.active ? "slot-1" : ""} ${!player.active ? "resting" : ""}">
+            ${player.active ? `⚡ ${player.orderSlot}-Й ВСТУПАЕТ` : "☕ ОТДЫХАЕТ (СЦЕНА НА 2-Х)"}
+          </div>
+          <div class="card-top-controls">
+            ${isMe ? `<span class="status-you">🎯 ЭТО ВЫ</span>` : ""}
+            ${isLeader ? `<span class="status-leader">👑 Лидер</span>` : ""}
+            ${isRuiner ? `<span class="status-ruiner">🍓 Руинер</span>` : ""}
+            <button class="mini-btn director-only" data-action="toggle-active" data-id="${player.id}" title="Включить/выключить игрока в текущем раунде">
+              ${player.active ? "✅" : "💤"}
+            </button>
+            ${state.players.length > 1 ? `<button class="mini-btn director-only" data-action="remove-player" data-id="${player.id}" title="Удалить стримера">✖</button>` : ""}
+          </div>
+        </div>
+
+        <div class="player-name-row">
+          <input
+            type="text"
+            class="player-name-input"
+            value="${player.name.replace(/"/g, "&quot;")}"
+            data-action="edit-name"
+            data-id="${player.id}"
+            spellcheck="false"
+            ${isStreamerMode ? "readonly" : ""}
+          />
+        </div>
+
+        ${voiceSectionHtml}
+
+        <div class="awards-row">
+          <div class="award-pill oscar">
+            <div class="award-info" title="Оскар от чата за лучший дубляж">
+              <span>🏆</span>
+              <span>${player.oscars}</span>
+            </div>
+            <div class="award-btns director-only">
+              <button class="score-btn" data-action="oscar-minus" data-id="${player.id}">-</button>
+              <button class="score-btn" data-action="oscar-plus" data-id="${player.id}">+</button>
+            </div>
+          </div>
+
+          <div class="award-pill raspberry">
+            <div class="award-info" title="Золотая малина за руин и смех">
+              <span>🍓</span>
+              <span>${player.raspberries}</span>
+            </div>
+            <div class="award-btns director-only">
+              <button class="score-btn" data-action="rasp-minus" data-id="${player.id}">-</button>
+              <button class="score-btn" data-action="rasp-plus" data-id="${player.id}">+</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      grid.appendChild(card);
+    });
+  }
+
+  function renderAll() {
+    renderHeader();
+    renderScene();
+    renderWheelSection();
+    renderPlayers(false);
+  }
+
+  // ОКНО РЕГИСТРАЦИИ СТРИМЕРА
+  const regOverlay = document.getElementById("registrationOverlay");
+  const regRoomInput = document.getElementById("regRoomInput");
+  const regNickInput = document.getElementById("regNickInput");
+
+  function openRegistrationModal() {
+    regRoomInput.value = state.roomCode;
+    regNickInput.value = myStreamerNick;
+    regOverlay.classList.add("active");
+    setTimeout(() => regNickInput.focus(), 50);
+  }
+
+  function submitStreamerRegistration() {
+    const nick = regNickInput.value.trim();
+    const room = regRoomInput.value.trim().toUpperCase() || "DUB-ROOM-1";
+    if (!nick) {
+      regNickInput.focus();
+      return;
+    }
+
+    myStreamerNick = nick;
+    state.roomCode = room;
+    localStorage.setItem(STREAMER_NICK_KEY, myStreamerNick);
+
+    isStreamerMode = true;
+    regOverlay.classList.remove("active");
+
+    subscribeToRoomTopics();
+    registerOrActivatePlayerOnDirector(myStreamerNick);
+    sendPlayerRegistration(myStreamerNick);
+    renderAll();
+  }
+
+  document.getElementById("btnSubmitRegistration").addEventListener("click", submitStreamerRegistration);
+  regNickInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") submitStreamerRegistration();
+  });
+
+  document.getElementById("btnBackToDirector").addEventListener("click", () => {
+    isStreamerMode = false;
+    regOverlay.classList.remove("active");
+    renderAll();
+  });
+
+  document.getElementById("btnOpenStreamerReg").addEventListener("click", openRegistrationModal);
+  document.getElementById("btnChangeNick").addEventListener("click", openRegistrationModal);
+
+  document.getElementById("btnSwitchToDirectorMode").addEventListener("click", () => {
+    isStreamerMode = false;
+    renderAll();
+  });
+
+  document.getElementById("roomCodeInput").addEventListener("change", e => {
+    state.roomCode = e.target.value.trim().toUpperCase() || "DUB-ROOM-1";
+    saveState(true);
+    subscribeToRoomTopics();
+  });
+
+  document.getElementById("btnCopyStreamerLink").addEventListener("click", () => {
+    const baseUrl = window.location.href.split("?")[0];
+    const inviteLink = `${baseUrl}?role=streamer&room=${encodeURIComponent(state.roomCode)}`;
+    navigator.clipboard.writeText(inviteLink).then(() => {
+      const btn = document.getElementById("btnCopyStreamerLink");
+      const oldText = btn.textContent;
+      btn.textContent = "✅ Ссылка скопирована!";
+      setTimeout(() => (btn.textContent = oldText), 2000);
+    });
+  });
+
+  // ПЕРЕКЛЮЧАТЕЛЬ РЕЖИМА ГОЛОСОВ (ВКЛ / БЕЗ УСЛОВИЙ)
+  document.getElementById("btnToggleVoicesMode").addEventListener("click", () => {
+    state.voicesEnabled = !state.voicesEnabled;
+    playTick(state.voicesEnabled ? 660 : 420);
+    saveState(true);
+    renderAll();
+  });
+
+  // СОБЫТИЯ КОЛЕСА И СЦЕНЫ
+  document.getElementById("btnToggleWheelPanel").addEventListener("click", () => {
+    state.wheelPanelOpen = !state.wheelPanelOpen;
+    saveState(true);
+    renderAll();
+  });
+
+  document.getElementById("btnCloseWheelPanel").addEventListener("click", () => {
+    state.wheelPanelOpen = false;
+    saveState(true);
+    renderAll();
+  });
+
+  document.getElementById("btnWheelModeSitOut").addEventListener("click", () => {
+    state.wheelMode = "SIT_OUT";
+    saveState(false);
+    renderWheelSection();
+  });
+
+  document.getElementById("btnWheelModePickTwo").addEventListener("click", () => {
+    state.wheelMode = "PICK_TWO";
+    saveState(false);
+    renderWheelSection();
+  });
+
+  document.getElementById("btnSpinWheelNow").addEventListener("click", () => {
+    spinParticipantWheelForTwo(false);
+  });
+
+  document.getElementById("btnQuickWheel2P").addEventListener("click", () => {
+    spinParticipantWheelForTwo(false);
+  });
+
+  document.getElementById("btnTogglePlayerCount").addEventListener("click", () => {
+    if (isStreamerMode) return;
+    state.currentScene.requiredPlayers = state.currentScene.requiredPlayers === 2 ? 3 : 2;
+    if (state.currentScene.requiredPlayers === 3) {
+      activateAllPlayersAndShuffle();
+    } else {
+      state.wheelPanelOpen = true;
+    }
+    saveState(true);
+    renderAll();
+  });
+
+  document.getElementById("btnActivateAllPlayers").addEventListener("click", () => {
+    state.currentScene.requiredPlayers = 3;
+    activateAllPlayersAndShuffle();
+    saveState(true);
+    renderAll();
+  });
+
+  // ОБРАБОТЧИКИ КНОПОК РАНДОМА
+  document.getElementById("btnRollAll").addEventListener("click", () => {
+    animateRoll({
+      rollScene: true,
+      rollOrder: true,
+      rollVoices: state.voicesEnabled,
+      incrementRound: true
+    });
+  });
+
+  document.getElementById("btnRollScene").addEventListener("click", () => {
+    animateRoll({ rollScene: true, rollOrder: false, rollVoices: false, incrementRound: false });
+  });
+
+  document.getElementById("btnRollOrder").addEventListener("click", () => {
+    animateRoll({ rollScene: false, rollOrder: true, rollVoices: false, incrementRound: false });
+  });
+
+  document.getElementById("btnRollVoices").addEventListener("click", () => {
+    if (!state.voicesEnabled) return;
+    animateRoll({ rollScene: false, rollOrder: false, rollVoices: true, incrementRound: false });
+  });
+
+  document.getElementById("roundBadge").addEventListener("click", () => {
+    if (isStreamerMode) return;
+    state.round = 1;
+    saveState(true);
+    renderHeader();
+  });
+
+  document.getElementById("btnLockScene").addEventListener("click", () => {
+    state.sceneLocked = !state.sceneLocked;
+    saveState(true);
+    renderScene();
+  });
+
+  document.getElementById("sceneTitle").addEventListener("blur", e => {
+    if (isStreamerMode) return;
+    state.currentScene.title = e.target.textContent.trim() || "Своя сцена";
+    saveState(true);
+  });
+
+  document.getElementById("btnAddPlayer").addEventListener("click", () => {
+    const nextSlot = state.players.length + 1;
+    const voices = parseVoiceList(state.voicesText, DEFAULT_VOICES);
+    const randomVoice = voices[Math.floor(Math.random() * voices.length)];
+    state.players.push({
+      id: "p_" + Date.now(),
+      name: `Стример ${nextSlot}`,
+      active: true,
+      orderSlot: nextSlot,
+      voiceTitle: randomVoice.title,
+      voiceDesc: randomVoice.desc,
+      voiceLocked: false,
+      oscars: 0,
+      raspberries: 0
+    });
+    saveState(true);
+    renderAll();
+  });
+
+  document.getElementById("btnResetScores").addEventListener("click", () => {
+    state.players.forEach(p => {
+      p.oscars = 0;
+      p.raspberries = 0;
+    });
+    saveState(true);
+    renderAll();
+  });
+
+  document.getElementById("btnSound").addEventListener("click", () => {
+    state.soundEnabled = !state.soundEnabled;
+    saveState(false);
+    renderHeader();
+  });
+
+  document.getElementById("btnObs").addEventListener("click", () => {
+    state.obsTransparent = !state.obsTransparent;
+    saveState(false);
+    renderHeader();
+  });
+
+  // Делегирование событий внутри карточек игроков
+  document.getElementById("playersGrid").addEventListener("click", e => {
+    if (isStreamerMode) return;
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+    const player = state.players.find(p => p.id === id);
+    if (!player) return;
+
+    if (action === "reroll-voice") {
+      rerollSinglePlayerVoice(id);
+    } else if (action === "lock-voice") {
+      player.voiceLocked = !player.voiceLocked;
+      saveState(true);
+      renderPlayers();
+    } else if (action === "toggle-active") {
+      player.active = !player.active;
+      randomizeOrder();
+      saveState(true);
+      renderPlayers();
+    } else if (action === "remove-player") {
+      state.players = state.players.filter(p => p.id !== id);
+      randomizeOrder();
+      saveState(true);
+      renderAll();
+    } else if (action === "oscar-plus") {
+      player.oscars++;
+      playOscarSound();
+      saveState(true);
+      renderPlayers();
+    } else if (action === "oscar-minus") {
+      player.oscars = Math.max(0, player.oscars - 1);
+      saveState(true);
+      renderPlayers();
+    } else if (action === "rasp-plus") {
+      player.raspberries++;
+      playRaspberrySound();
+      saveState(true);
+      renderPlayers();
+    } else if (action === "rasp-minus") {
+      player.raspberries = Math.max(0, player.raspberries - 1);
+      saveState(true);
+      renderPlayers();
+    }
+  });
+
+  document.getElementById("playersGrid").addEventListener("input", e => {
+    if (isStreamerMode) return;
+    const input = e.target.closest("[data-action='edit-name']");
+    if (!input) return;
+    const player = state.players.find(p => p.id === input.dataset.id);
+    if (player) {
+      player.name = input.value;
+      saveState(true);
+      drawParticipantWheel(state.players.map(p => p.name), currentWheelAngle);
+    }
+  });
+
+  // Модальное окно со списками
+  const modal = document.getElementById("settingsModal");
+  document.getElementById("btnSettings").addEventListener("click", () => {
+    document.getElementById("textareaScenes").value = state.scenesText;
+    document.getElementById("textareaVoices").value = state.voicesText;
+    modal.classList.add("open");
+  });
+
+  document.getElementById("btnCloseModal").addEventListener("click", () => {
+    modal.classList.remove("open");
+  });
+
+  document.getElementById("btnSaveLists").addEventListener("click", () => {
+    state.scenesText = document.getElementById("textareaScenes").value.trim() || DEFAULT_SCENES.join("\n");
+    state.voicesText = document.getElementById("textareaVoices").value.trim() || DEFAULT_VOICES.join("\n");
+    saveState(true);
+    modal.classList.remove("open");
+    renderAll();
+  });
+
+  document.getElementById("btnRestoreDefaults").addEventListener("click", () => {
+    document.getElementById("textareaScenes").value = DEFAULT_SCENES.join("\n");
+    document.getElementById("textareaVoices").value = DEFAULT_VOICES.join("\n");
+  });
+
+  // Инициализация
+  loadState();
+  renderAll();
+  initNetworkSync();
+
+  if (isStreamerMode) {
+    openRegistrationModal();
+  }
+</script>
+</body>
+</html>
